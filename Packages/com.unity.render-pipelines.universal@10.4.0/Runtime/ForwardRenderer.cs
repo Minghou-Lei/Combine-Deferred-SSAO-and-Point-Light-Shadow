@@ -30,7 +30,7 @@ namespace UnityEngine.Rendering.Universal
         }
 
         // Rendering mode setup from UI.
-        internal RenderingMode renderingMode { get { return RenderingMode.Forward;  } }
+        internal RenderingMode renderingMode { get { return m_RenderingMode;  } }
         // Actual rendering mode, which may be different (ex: wireframe rendering, harware not capable of deferred rendering).
         internal RenderingMode actualRenderingMode { get { return GL.wireframe || m_DeferredLights == null || !m_DeferredLights.IsRuntimeSupportedThisFrame()  ? RenderingMode.Forward : this.renderingMode; } }
         internal bool accurateGbufferNormals { get { return m_DeferredLights != null ? m_DeferredLights.AccurateGbufferNormals : false; } }
@@ -117,7 +117,7 @@ namespace UnityEngine.Rendering.Universal
 
             m_ForwardLights = new ForwardLights();
             //m_DeferredLights.LightCulling = data.lightCulling;
-            this.m_RenderingMode = RenderingMode.Forward;
+            this.m_RenderingMode = data.renderingMode;
 
             // Note: Since all custom render passes inject first and we have stable sort,
             // we inject the builtin passes in the before events.
