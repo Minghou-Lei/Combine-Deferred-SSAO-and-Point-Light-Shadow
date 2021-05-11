@@ -229,6 +229,9 @@ Shader "Universal Render Pipeline/Lit"
             #pragma multi_compile_instancing
             #pragma multi_compile _ DOTS_INSTANCING_ON
 
+            //Newly added: Deferred SSAO Support
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
+
             #pragma vertex LitGBufferPassVertex
             #pragma fragment LitGBufferPassFragment
 

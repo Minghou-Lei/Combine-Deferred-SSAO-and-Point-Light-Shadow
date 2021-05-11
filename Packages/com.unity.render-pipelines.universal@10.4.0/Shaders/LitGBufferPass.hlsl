@@ -152,6 +152,9 @@ Varyings LitGBufferPassVertex(Attributes input)
     return output;
 }
 
+//SamplerState for SSAO
+SamplerState my_point_clamp_sampler;
+
 // Used in Standard (Physically Based) shader
 FragmentOutput LitGBufferPassFragment(Varyings input)
 {
@@ -185,6 +188,14 @@ FragmentOutput LitGBufferPassFragment(Varyings input)
     // in Deferred rendering we store the sum of these values (and of emission as well) in the GBuffer
     BRDFData brdfData;
     InitializeBRDFData(surfaceData.albedo, surfaceData.metallic, surfaceData.specular, surfaceData.smoothness, surfaceData.alpha, brdfData);
+
+    #if defined(_SCREEN_SPACE_OCCLUSION)
+    
+    float indirectAmbientOcclusion = SAMPLE_TEXTURE2D_X_LOD(_ScreenSpaceOcclusionTexture, my_point_clamp_sampler,inputData.normalizedScreenSpaceUV, 0);
+    
+    surfaceData.occlusion *= indirectAmbientOcclusion;
+    
+    #endif
 
     half3 color = GlobalIllumination(brdfData, inputData.bakedGI, surfaceData.occlusion, inputData.normalWS, inputData.viewDirectionWS);
 

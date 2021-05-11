@@ -142,6 +142,12 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
         half4 gbuffer1 = SAMPLE_TEXTURE2D_X_LOD(_GBuffer1, my_point_clamp_sampler, screen_uv, 0);
         half4 gbuffer2 = SAMPLE_TEXTURE2D_X_LOD(_GBuffer2, my_point_clamp_sampler, screen_uv, 0);
 
+        #if defined(_SCREEN_SPACE_OCCLUSION)
+		AmbientOcclusionFactor aoFactor;
+		aoFactor.indirectAmbientOcclusion = SAMPLE_TEXTURE2D_X_LOD(_ScreenSpaceOcclusionTexture, my_point_clamp_sampler,screen_uv, 0);
+		aoFactor.directAmbientOcclusion = lerp(1.0, aoFactor.indirectAmbientOcclusion, _AmbientOcclusionParam.w);
+		#endif
+
         #ifdef _DEFERRED_SUBTRACTIVE_LIGHTING
         half4 gbuffer4 = SAMPLE_TEXTURE2D_X_LOD(_GBuffer4, my_point_clamp_sampler, screen_uv, 0);
         half4 shadowMask = gbuffer4;
@@ -208,6 +214,10 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             unityLight = UnityLightFromPunctualLightDataAndWorldSpacePosition(light, posWS.xyz, shadowMask, materialReceiveShadowsOff);
         #endif
 
+        #if defined(_SCREEN_SPACE_OCCLUSION)
+		unityLight.color *= aoFactor.directAmbientOcclusion;
+		#endif
+        
         half3 color = 0.0.xxx;
 
         #if defined(_LIT)
@@ -309,6 +319,9 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
             #pragma multi_compile_fragment _ _DEFERRED_SUBTRACTIVE_LIGHTING
 
+            //Newly added: Deferred SSAO Support
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
+
             #pragma vertex Vertex
             #pragma fragment DeferredShading
             //#pragma enable_d3d11_debug_symbols
@@ -348,6 +361,9 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
             #pragma multi_compile_fragment _ _DEFERRED_SUBTRACTIVE_LIGHTING
+
+            //Newly added: Deferred SSAO Support
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
 
             #pragma vertex Vertex
             #pragma fragment DeferredShading
@@ -390,6 +406,9 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
             #pragma multi_compile_fragment _ _DEFERRED_SUBTRACTIVE_LIGHTING
 
+            //Newly added: Deferred SSAO Support
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
+
             #pragma vertex Vertex
             #pragma fragment DeferredShading
             //#pragma enable_d3d11_debug_symbols
@@ -430,6 +449,9 @@ Shader "Hidden/Universal Render Pipeline/StencilDeferred"
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
             #pragma multi_compile_fragment _ _DEFERRED_SUBTRACTIVE_LIGHTING
+
+            //Newly added: Deferred SSAO Support
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
 
             #pragma vertex Vertex
             #pragma fragment DeferredShading
