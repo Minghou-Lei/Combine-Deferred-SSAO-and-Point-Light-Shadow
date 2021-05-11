@@ -58,6 +58,31 @@ namespace UnityEngine.Rendering.Universal
 
             return success;
         }
+        
+        public static bool ExtractPointLightMatrix(ref CullingResults cullResults, ref ShadowData shadowData, int shadowLightIndex, CubemapFace cubemapFace, float fovBias, out Matrix4x4 shadowMatrix, out Matrix4x4 viewMatrix, out Matrix4x4 projMatrix)
+        {
+            ShadowSplitData splitData;
+            bool success = cullResults.ComputePointShadowMatricesAndCullingPrimitives(shadowLightIndex, cubemapFace, fovBias, out viewMatrix, out projMatrix, out splitData); // returns false if input parameters are incorrect (rare)
+
+            // In native API CullingResults.ComputeSpotShadowMatricesAndCullingPrimitives there is code that inverts the 3rd component of shadow-casting spot light's "world-to-local" matrix (it was so since its original addition to the code base):
+            // https://github.cds.internal.unity3d.com/unity/unity/commit/34813e063526c4be0ef0448dfaae3a911dd8be58#diff-cf0b417fc6bd8ee2356770797e628cd4R331
+            // (the same transformation has also always been used in the Built-In Render Pipeline)
+            //
+            // However native API CullingResults.ComputePointShadowMatricesAndCullingPrimitives does not contain this transformation.
+            // As a result, the view matrices returned for a point light shadow face, and for a spot light with same direction as that face, have opposite 3rd component.
+            //
+            // This causes normalBias to be incorrectly applied to shadow caster vertices during the point light shadow pass.
+            // To counter this effect, we invert the point light shadow view matrix component here:
+            {
+                viewMatrix.m10 = -viewMatrix.m10;
+                viewMatrix.m11 = -viewMatrix.m11;
+                viewMatrix.m12 = -viewMatrix.m12;
+                viewMatrix.m13 = -viewMatrix.m13;
+            }
+
+            shadowMatrix = GetShadowTransform(projMatrix, viewMatrix);
+            return success;
+        }
 
         public static bool ExtractSpotLightMatrix(ref CullingResults cullResults, ref ShadowData shadowData, int shadowLightIndex, out Matrix4x4 shadowMatrix, out Matrix4x4 viewMatrix, out Matrix4x4 projMatrix)
         {
@@ -138,9 +163,25 @@ namespace UnityEngine.Rendering.Universal
                 // Depending on how big the light range is, it will be good enough with some tweaks in bias
                 frustumSize = Mathf.Tan(shadowLight.spotAngle * 0.5f * Mathf.Deg2Rad) * shadowLight.range;
             }
+            else if (shadowLight.lightType == LightType.Point)
+            {
+                // [Copied from above case:]
+                // "For perspective projections, shadow texel size varies with depth
+                //  It will only work well if done in receiver side in the pixel shader. Currently UniversalRP
+                //  do bias on caster side in vertex shader. When we add shader quality tiers we can properly
+                //  handle this. For now, as a poor approximation we do a constant bias and compute the size of
+                //  the frustum as if it was orthogonal considering the size at mid point between near and far planes.
+                //  Depending on how big the light range is, it will be good enough with some tweaks in bias"
+                // Note: HDRP uses normalBias both in HDShadowUtils.CalcGuardAnglePerspective and HDShadowAlgorithms/EvalShadow_NormalBias (receiver bias)
+                // Note: shadowLight.spotAngle includes the point light shadow frustum angle (90 degrees) plus the guard angle computed by AdditionalLightsShadowCasterPass.GetPointLightShadowFrustumFovBiasInDegrees
+                float fovBias = Internal.AdditionalLightsShadowCasterPass.GetPointLightShadowFrustumFovBiasInDegrees((int)shadowResolution, (shadowLight.light.shadows==LightShadows.Soft));
+                // Note: the same fovBias was also used to compute ShadowUtils.ExtractPointLightMatrix
+                float cubeFaceAngle = 90 + fovBias; 
+                frustumSize = Mathf.Tan(cubeFaceAngle * 0.5f * Mathf.Deg2Rad) * shadowLight.range; // half-width (in world-space units) of shadow frustum's "far plane"
+            }
             else
             {
-                Debug.LogWarning("Only spot and directional shadow casters are supported in universal pipeline");
+                Debug.LogWarning("Only point, spot and directional shadow casters are supported in universal pipeline");
                 frustumSize = 0.0f;
             }
 
@@ -166,9 +207,22 @@ namespace UnityEngine.Rendering.Universal
 
         public static void SetupShadowCasterConstantBuffer(CommandBuffer cmd, ref VisibleLight shadowLight, Vector4 shadowBias)
         {
-            Vector3 lightDirection = -shadowLight.localToWorldMatrix.GetColumn(2);
+            
             cmd.SetGlobalVector("_ShadowBias", shadowBias);
-            cmd.SetGlobalVector("_LightDirection", new Vector4(lightDirection.x, lightDirection.y, lightDirection.z, 0.0f));
+            
+            // Light direction is currently used in shadow caster pass to apply shadow normal offset (normal bias).
+            if(shadowLight.lightType == LightType.Directional)
+            {
+                Vector3 lightDirection = -shadowLight.localToWorldMatrix.GetColumn(2);
+                cmd.SetGlobalVector("_ShadowCastingLightParameters", new Vector4(lightDirection.x, lightDirection.y, lightDirection.z, 0.0f));
+            }
+            else
+            {
+                // For punctual lights, computing light direction at each vertex position provides more consistent results (shadow shape does not change when "rotating the point light" for example)
+                Vector3 lightPosition = shadowLight.localToWorldMatrix.GetColumn(3);
+                cmd.SetGlobalVector("_ShadowCastingLightParameters",
+                    new Vector4(lightPosition.x, lightPosition.y, lightPosition.z, 0.0f));
+            }
         }
 
         public static RenderTexture GetTemporaryShadowTexture(int width, int height, int bits)

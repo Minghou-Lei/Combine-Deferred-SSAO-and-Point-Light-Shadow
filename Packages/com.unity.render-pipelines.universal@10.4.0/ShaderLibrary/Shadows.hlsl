@@ -268,7 +268,7 @@ half MainLightRealtimeShadow(float4 shadowCoord)
     return SampleShadowmap(TEXTURE2D_ARGS(_MainLightShadowmapTexture, sampler_MainLightShadowmapTexture), shadowCoord, shadowSamplingData, shadowParams, false);
 }
 
-half AdditionalLightRealtimeShadow(int lightIndex, float3 positionWS)
+half AdditionalLightRealtimeShadow(int lightIndex, float3 positionWS, half3 lightDirection)
 {
 #if !defined(ADDITIONAL_LIGHT_CALCULATE_SHADOWS)
     return 1.0h;
@@ -277,7 +277,7 @@ half AdditionalLightRealtimeShadow(int lightIndex, float3 positionWS)
     ShadowSamplingData shadowSamplingData = GetAdditionalLightShadowSamplingData();
 
 #if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
-    lightIndex = _AdditionalShadowsIndices[lightIndex];
+    lightIndex = _AdditionalShadowsIndices[lightIndex]; // shadow slice index
 
     // We have to branch here as otherwise we would sample buffer with lightIndex == -1.
     // However this should be ok for platforms that store light in SSBO.
@@ -287,10 +287,24 @@ half AdditionalLightRealtimeShadow(int lightIndex, float3 positionWS)
 
     float4 shadowCoord = mul(_AdditionalShadowsBuffer[lightIndex].worldToShadowMatrix, float4(positionWS, 1.0));
 #else
-    float4 shadowCoord = mul(_AdditionalLightsWorldToShadow[lightIndex], float4(positionWS, 1.0));
-#endif
-
+    
     half4 shadowParams = GetAdditionalLightShadowParams(lightIndex);
+
+    int shadowSliceIndex = shadowParams.w;
+
+    // Test if this is a point light - Keep in sync with AdditionalLightsShadowCasterPass.LightTypeIdentifierInShadowParams_Point
+    // TODO: Investigate potential optimization: Try solutions that do not require branching, and compare performances
+    if (shadowParams.z)
+    {
+        // This is a point light, we have to find out which shadow slice to sample from
+        float cubemapFaceId = CubeMapFaceID(-lightDirection);
+        shadowSliceIndex += cubemapFaceId;
+    }
+    float4 shadowCoord = mul(_AdditionalLightsWorldToShadow[shadowSliceIndex], float4(positionWS, 1.0));
+
+    #endif
+
+    
     return SampleShadowmap(TEXTURE2D_ARGS(_AdditionalLightsShadowmapTexture, sampler_AdditionalLightsShadowmapTexture), shadowCoord, shadowSamplingData, shadowParams, true);
 }
 
@@ -348,9 +362,9 @@ half MainLightShadow(float4 shadowCoord, float3 positionWS, half4 shadowMask, ha
     return MixRealtimeAndBakedShadows(realtimeShadow, bakedShadow, shadowFade);
 }
 
-half AdditionalLightShadow(int lightIndex, float3 positionWS, half4 shadowMask, half4 occlusionProbeChannels)
+half AdditionalLightShadow(int lightIndex, float3 positionWS, half4 shadowMask, half4 occlusionProbeChannels,float3 lightDirection)
 {
-    half realtimeShadow = AdditionalLightRealtimeShadow(lightIndex, positionWS);
+    half realtimeShadow = AdditionalLightRealtimeShadow(lightIndex, positionWS, lightDirection);
 
 #ifdef CALCULATE_BAKED_SHADOWS
     half bakedShadow = BakedShadow(shadowMask, occlusionProbeChannels);
